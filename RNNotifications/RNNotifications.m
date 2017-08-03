@@ -1,17 +1,26 @@
 
 #import <UIKit/UIKit.h>
 #import <PushKit/PushKit.h>
-#import "RCTBridge.h"
-#import "RCTEventDispatcher.h"
-#import "RNNotifications.h"
-#import "RCTConvert.h"
-#import "RCTUtils.h"
+#if __has_include(<React/RCTBridge.h>)
+  #import <React/RCTBridge.h>
+  #import <React/RCTEventDispatcher.h>
+  #import "RNNotifications.h"
+  #import <React/RCTConvert.h>
+  #import <React/RCTUtils.h>
+#else
+  #import "RCTBridge.h"
+  #import "RCTEventDispatcher.h"
+  #import "RNNotifications.h"
+  #import "RCTConvert.h"
+  #import "RCTUtils.h"
+#endif
 #import "RNNotificationsBridgeQueue.h"
 
 NSString* const RNNotificationCreateAction = @"CREATE";
 NSString* const RNNotificationClearAction = @"CLEAR";
 
 NSString* const RNNotificationsRegistered = @"RNNotificationsRegistered";
+NSString* const RNNotificationsRegistrationFailed = @"RNNotificationsRegistrationFailed";
 NSString* const RNPushKitRegistered = @"RNPushKitRegistered";
 NSString* const RNNotificationReceivedForeground = @"RNNotificationReceivedForeground";
 NSString* const RNNotificationReceivedBackground = @"RNNotificationReceivedBackground";
@@ -138,6 +147,11 @@ RCT_EXPORT_MODULE()
                                                object:nil];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleNotificationsRegistrationFailed:)
+                                                 name:RNNotificationsRegistrationFailed
+                                               object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(handlePushKitRegistered:)
                                                  name:RNPushKitRegistered
                                                object:nil];
@@ -181,6 +195,12 @@ RCT_EXPORT_MODULE()
     [[NSNotificationCenter defaultCenter] postNotificationName:RNNotificationsRegistered
                                                         object:self
                                                       userInfo:@{@"deviceToken": [self deviceTokenToString:deviceToken]}];
+}
+
++ (void)didFailToRegisterForRemoteNotificationsWithError:(NSError *)error {
+    [[NSNotificationCenter defaultCenter] postNotificationName:RNNotificationsRegistrationFailed
+                                                        object:self
+                                                      userInfo:@{@"code": [NSNumber numberWithInteger:error.code], @"domain": error.domain, @"localizedDescription": error.localizedDescription}];
 }
 
 + (void)didReceiveRemoteNotification:(NSDictionary *)notification
@@ -408,6 +428,11 @@ RCT_EXPORT_MODULE()
     [_bridge.eventDispatcher sendDeviceEventWithName:@"remoteNotificationsRegistered" body:notification.userInfo];
 }
 
+- (void)handleNotificationsRegistrationFailed:(NSNotification *)notification
+{
+    [_bridge.eventDispatcher sendDeviceEventWithName:@"remoteNotificationsRegistrationFailed" body:notification.userInfo];
+}
+
 - (void)handlePushKitRegistered:(NSNotification *)notification
 {
     [_bridge.eventDispatcher sendDeviceEventWithName:@"pushKitRegistered" body:notification.userInfo];
@@ -470,6 +495,11 @@ RCT_EXPORT_METHOD(registerPushKit)
     [RNNotifications registerPushKit];
 }
 
+RCT_EXPORT_METHOD(setBadgesCount:(int)count)
+{
+    [[UIApplication sharedApplication] setApplicationIconBadgeNumber:count];
+}
+
 RCT_EXPORT_METHOD(backgroundTimeRemaining:(RCTResponseSenderBlock)callback)
 {
     NSTimeInterval remainingTime = [UIApplication sharedApplication].backgroundTimeRemaining;
@@ -496,12 +526,14 @@ RCT_EXPORT_METHOD(consumeBackgroundQueue)
     // Push opened local notifications
     NSDictionary* openedLocalNotification = [RNNotificationsBridgeQueue sharedInstance].openedLocalNotification;
     if (openedLocalNotification) {
+        [RNNotificationsBridgeQueue sharedInstance].openedLocalNotification = nil;
         [RNNotifications didNotificationOpen:openedLocalNotification];
     }
 
     // Push opened remote notifications
     NSDictionary* openedRemoteNotification = [RNNotificationsBridgeQueue sharedInstance].openedRemoteNotification;
     if (openedRemoteNotification) {
+        [RNNotificationsBridgeQueue sharedInstance].openedRemoteNotification = nil;
         [RNNotifications didNotificationOpen:openedRemoteNotification];
     }
 }
@@ -534,6 +566,19 @@ RCT_EXPORT_METHOD(cancelLocalNotification:(NSString *)notificationId)
 RCT_EXPORT_METHOD(cancelAllLocalNotifications)
 {
     [RCTSharedApplication() cancelAllLocalNotifications];
+}
+
+RCT_EXPORT_METHOD(isRegisteredForRemoteNotifications:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+    BOOL ans;
+    
+    if (TARGET_IPHONE_SIMULATOR) {
+        ans = [[[UIApplication sharedApplication] currentUserNotificationSettings] types] != 0;
+    }
+    else {
+        ans = [[UIApplication sharedApplication] isRegisteredForRemoteNotifications];
+    }
+    resolve(@(ans));
 }
 
 @end
