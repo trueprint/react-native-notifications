@@ -44,13 +44,23 @@ export class NotificationsAndroid {
   static refreshToken() {
     RNNotifications.refreshToken();
   }
+
+  static localNotification(notification: Object) {
+    const id = Math.random() * 100000000 | 0; // Bitwise-OR forces value onto a 32bit limit
+    RNNotifications.postLocalNotification(notification, id);
+    return id;
+  }
+
+  static cancelLocalNotification(id) {
+    RNNotifications.cancelLocalNotification(id);
+  }
 }
 
 export class PendingNotifications {
   static getInitialNotification() {
     return RNNotifications.getInitialNotification()
       .then((rawNotification) => {
-        return new NotificationAndroid(rawNotification);
+        return rawNotification ? new NotificationAndroid(rawNotification) : undefined;
       });
   }
 }
